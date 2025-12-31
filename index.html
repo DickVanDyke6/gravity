@@ -1,237 +1,249 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-<title>Gravity Sandbox - Stable Piling</title>
+<meta charset="UTF-8" />
+<title>Gravity Sandbox</title>
 <style>
-html, body {
-  margin: 0; padding: 0;
-  background: #000; overflow: hidden;
-  touch-action: none;
-  font-family: sans-serif;
-  color: #fff;
-}
-canvas { display: block; }
-.controls {
-  position: absolute;
-  top: 10px;
-  left: 10px;
-  background: rgba(0,0,0,0.6);
-  padding: 10px;
-  border-radius: 8px;
-}
-.controls label { display: block; margin: 5px 0; }
-.controls input[type=range] { width: 150px; }
-button, input[type=checkbox] {
-  margin-top: 5px;
-  cursor: pointer;
-}
-button {
-  width: 100%;
-  padding: 5px;
-  border-radius: 5px;
-  border: none;
-  background: #f55;
-  color: #fff;
-  font-weight: bold;
-}
-button:hover { background: #f88; }
+  body {
+    margin: 0;
+    background: #111;
+    color: #eee;
+    font-family: sans-serif;
+    overflow: hidden;
+  }
+  #ui {
+    position: fixed;
+    top: 10px;
+    left: 10px;
+    background: rgba(0,0,0,0.7);
+    padding: 10px;
+    border-radius: 8px;
+  }
+  label { display: block; margin-top: 5px; }
 </style>
 </head>
 <body>
-<canvas id="c"></canvas>
+<canvas id="canvas"></canvas>
 
-<div class="controls">
-  <label>Central Mass: <span id="cmassVal">5000</span>
-    <input id="cmass" type="range" min="100" max="20000" value="5000">
+<div id="ui">
+  <button id="clear">Clear Projectiles</button>
+  <label>
+    <input type="checkbox" id="collisions">
+    Enable Collisions
   </label>
-  <label>Central Radius: <span id="cradVal">30</span>
-    <input id="crad" type="range" min="10" max="100" value="30">
-  </label>
-  <label>Projectile Mass: <span id="pmassVal">1</span>
-    <input id="pmass" type="range" min="1" max="50" value="1">
-  </label>
-  <label>Projectile Radius: <span id="pradVal">6</span>
-    <input id="prad" type="range" min="2" max="20" value="6">
-  </label>
-  <label><input type="checkbox" id="collideToggle"> Collisions ON</label>
-  <button id="clearBtn">Clear All Projectiles</button>
 </div>
 
 <script>
-const canvas = document.getElementById("c");
+const canvas = document.getElementById("canvas");
 const ctx = canvas.getContext("2d");
-
-function resize() { canvas.width = window.innerWidth; canvas.height = window.innerHeight; }
 resize();
 window.addEventListener("resize", resize);
 
-const G = 1200;
-let centralMass = 5000;
-let centralRadius = 30;
-let projectileMass = 1;
-let projectileRadius = 6;
-const dt = 1/60;
-
-const planet = { x: () => canvas.width/2, y: () => canvas.height/2, r: centralRadius };
-let projectiles = [];
-let previewPath = [];
-let touchStart = null;
-
-const damping = 0.95;  // normal energy loss
-const friction = 0.85; // tangential friction
-
-// ---------- Controls ----------
-document.getElementById("cmass").addEventListener("input", e => {
-  centralMass = +e.target.value;
-  document.getElementById("cmassVal").innerText = centralMass;
-});
-document.getElementById("crad").addEventListener("input", e => {
-  centralRadius = +e.target.value;
-  planet.r = centralRadius;
-  document.getElementById("cradVal").innerText = centralRadius;
-});
-document.getElementById("pmass").addEventListener("input", e => {
-  projectileMass = +e.target.value;
-  document.getElementById("pmassVal").innerText = projectileMass;
-});
-document.getElementById("prad").addEventListener("input", e => {
-  projectileRadius = +e.target.value;
-  document.getElementById("pradVal").innerText = projectileRadius;
-});
-const collideToggle = document.getElementById("collideToggle");
-document.getElementById("clearBtn").addEventListener("click", ()=>{ projectiles = []; });
-
-// ---------- Touch controls ----------
-canvas.addEventListener("touchstart", e => {
-  const t = e.touches[0];
-  touchStart = { x: t.clientX, y: t.clientY };
-});
-
-canvas.addEventListener("touchmove", e => {
-  if (!touchStart) return;
-  const t = e.touches[0];
-  const vx = (touchStart.x - t.clientX) * 0.05;
-  const vy = (touchStart.y - t.clientY) * 0.05;
-  computePreview(t.clientX, t.clientY, vx, vy);
-});
-
-canvas.addEventListener("touchend", e => {
-  if (!touchStart) return;
-  const t = e.changedTouches[0];
-  const vx = (touchStart.x - t.clientX) * 0.05;
-  const vy = (touchStart.y - t.clientY) * 0.05;
-  projectiles.push({ x: t.clientX, y: t.clientY, vx: vx, vy: vy, r: projectileRadius, mass: projectileMass });
-  touchStart = null;
-  previewPath = [];
-});
-
-// ---------- Trajectory preview ----------
-function computePreview(x, y, vx, vy) {
-  previewPath = [];
-  let px=x, py=y, pvx=vx, pvy=vy;
-  for(let i=0;i<200;i++){
-    const dx = planet.x() - px;
-    const dy = planet.y() - py;
-    const dist = Math.sqrt(dx*dx + dy*dy);
-    if(collideToggle.checked && dist < planet.r + projectileRadius) break;
-    const accel = (G*centralMass)/(dist*dist);
-    pvx += accel*dx/dist*dt;
-    pvy += accel*dy/dist*dt;
-    px += pvx; py += pvy;
-    previewPath.push({x:px,y:py});
-  }
+function resize() {
+  canvas.width = innerWidth;
+  canvas.height = innerHeight;
 }
 
-// ---------- Unified collision ----------
-function collide(a,b,applyFriction=false){
+const G = 1200;
+const planet = {
+  x: canvas.width / 2,
+  y: canvas.height / 2,
+  r: 60,
+  mass: 5000
+};
+
+const projectiles = [];
+let collisionsEnabled = false;
+
+document.getElementById("collisions").onchange = e =>
+  collisionsEnabled = e.target.checked;
+
+document.getElementById("clear").onclick = () =>
+  projectiles.length = 0;
+
+// -----------------------------
+// Input (drag to launch)
+// -----------------------------
+let dragging = false;
+let dragStart = null;
+let dragCurrent = null;
+
+canvas.addEventListener("mousedown", e => {
+  dragging = true;
+  dragStart = { x: e.clientX, y: e.clientY };
+});
+
+canvas.addEventListener("mousemove", e => {
+  if (dragging) dragCurrent = { x: e.clientX, y: e.clientY };
+});
+
+canvas.addEventListener("mouseup", e => {
+  dragging = false;
+  if (!dragStart || !dragCurrent) return;
+
+  const vx = (dragStart.x - dragCurrent.x) * 0.05;
+  const vy = (dragStart.y - dragCurrent.y) * 0.05;
+
+  projectiles.push({
+    x: dragStart.x,
+    y: dragStart.y,
+    vx, vy,
+    r: 8,
+    mass: 1
+  });
+
+  dragStart = dragCurrent = null;
+});
+
+// -----------------------------
+// Physics
+// -----------------------------
+function applyGravity(p) {
+  const dx = planet.x - p.x;
+  const dy = planet.y - p.y;
+  const dist = Math.sqrt(dx*dx + dy*dy);
+  if (dist === 0) return;
+
+  const force = G * planet.mass * p.mass / (dist * dist);
+  const ax = force * dx / dist / p.mass;
+  const ay = force * dy / dist / p.mass;
+
+  p.vx += ax;
+  p.vy += ay;
+}
+
+// ---- CENTRAL COLLISION (UNCHANGED) ----
+function resolvePlanetCollision(p) {
+  const dx = p.x - planet.x;
+  const dy = p.y - planet.y;
+  const dist = Math.sqrt(dx*dx + dy*dy);
+  const minDist = planet.r + p.r;
+
+  if (dist >= minDist || dist === 0) return;
+
+  const nx = dx / dist;
+  const ny = dy / dist;
+
+  // snap to surface
+  p.x = planet.x + nx * minDist;
+  p.y = planet.y + ny * minDist;
+
+  const vn = p.vx * nx + p.vy * ny;
+  const tx = -ny;
+  const ty = nx;
+  const vt = p.vx * tx + p.vy * ty;
+
+  const restitution = 0.6;
+  const friction = 0.85;
+
+  p.vx = -vn * restitution * nx + vt * friction * tx;
+  p.vy = -vn * restitution * ny + vt * friction * ty;
+}
+
+// ---- PROJECTILE–PROJECTILE (PLANET-STYLE) ----
+function resolveProjectileCollision(a, b) {
   const dx = b.x - a.x;
   const dy = b.y - a.y;
   const dist = Math.sqrt(dx*dx + dy*dy);
-  if(dist===0 || dist >= a.r + b.r) return;
-  const nx = dx/dist, ny = dy/dist;
-  const vxRel = a.vx - (b.vx||0);
-  const vyRel = a.vy - (b.vy||0);
-  const vDotN = vxRel*nx + vyRel*ny;
-  if(vDotN > 0 && !applyFriction) return; // only ignore if normal proj-proj
-  const m1=a.mass, m2=b.mass;
-  const impulse = (2*vDotN)/(m1+m2);
-  a.vx -= impulse*m2*nx; a.vy -= impulse*m2*ny;
-  if(b.vx!==undefined){ b.vx += impulse*m1*nx; b.vy += impulse*m1*ny; }
-  if(applyFriction){
-    const vTanX = a.vx - vDotN*nx;
-    const vTanY = a.vy - vDotN*ny;
-    a.vx -= vTanX*(1-friction);
-    a.vy -= vTanY*(1-friction);
-  }
-  const overlap = a.r + (b.r||0) - dist;
-  a.x -= nx*overlap/2; a.y -= ny*overlap/2;
-  if(b.x!==undefined){ b.x += nx*overlap/2; b.y += ny*overlap/2; }
+  const minDist = a.r + b.r;
+  if (dist >= minDist || dist === 0) return;
+
+  const nx = dx / dist;
+  const ny = dy / dist;
+
+  // positional correction (gentle)
+  const overlap = minDist - dist;
+  const correction = overlap * 0.5;
+  a.x -= nx * correction;
+  a.y -= ny * correction;
+  b.x += nx * correction;
+  b.y += ny * correction;
+
+  // relative velocity
+  const rvx = a.vx - b.vx;
+  const rvy = a.vy - b.vy;
+
+  const vn = rvx * nx + rvy * ny;
+  if (vn > 0) return;
+
+  const tx = -ny;
+  const ty = nx;
+  const vt = rvx * tx + rvy * ty;
+
+  const restitution = 0.6;
+  const friction = 0.85;
+
+  const impulseN = -vn * restitution;
+  const im1 = 1 / a.mass;
+  const im2 = 1 / b.mass;
+  const impulse = impulseN / (im1 + im2);
+
+  const ix = impulse * nx;
+  const iy = impulse * ny;
+
+  a.vx += ix * im1;
+  a.vy += iy * im1;
+  b.vx -= ix * im2;
+  b.vy -= iy * im2;
+
+  // tangential friction (planet-style)
+  const frictionImpulse = vt * friction * 0.1;
+  a.vx -= frictionImpulse * tx;
+  a.vy -= frictionImpulse * ty;
+  b.vx += frictionImpulse * tx;
+  b.vy += frictionImpulse * ty;
 }
 
-// ---------- Update ----------
-function update(){
-  const collisionOn = collideToggle.checked;
-  for(let ball of projectiles){
-    const dx = planet.x() - ball.x;
-    const dy = planet.y() - ball.y;
-    const dist = Math.sqrt(dx*dx + dy*dy);
+// -----------------------------
+// Loop
+// -----------------------------
+function update() {
+  ctx.clearRect(0,0,canvas.width,canvas.height);
 
-    // Planet collision handled separately
-    if(dist < planet.r + ball.r){
-      collide(ball, {x:planet.x(), y:planet.y(), r:planet.r, mass:1e20}, true);
-    }
+  // planet
+  ctx.beginPath();
+  ctx.arc(planet.x, planet.y, planet.r, 0, Math.PI*2);
+  ctx.fillStyle = "#3a7";
+  ctx.fill();
 
-    // Gravity
-    const accel = (G*centralMass)/(dist*dist);
-    ball.vx += accel*dx/dist*dt;
-    ball.vy += accel*dy/dist*dt;
+  for (const p of projectiles) {
+    applyGravity(p);
+    p.x += p.vx;
+    p.y += p.vy;
 
-    // Update position
-    ball.x += ball.vx; ball.y += ball.vy;
+    if (collisionsEnabled)
+      resolvePlanetCollision(p);
   }
 
-  // Projectile collisions
-  if(collisionOn){
-    for(let i=0;i<projectiles.length;i++){
-      for(let j=i+1;j<projectiles.length;j++){
-        collide(projectiles[i],projectiles[j],true);
+  if (collisionsEnabled) {
+    for (let i=0;i<projectiles.length;i++) {
+      for (let j=i+1;j<projectiles.length;j++) {
+        resolveProjectileCollision(projectiles[i], projectiles[j]);
       }
     }
   }
-}
 
-// ---------- Draw ----------
-function draw(){
-  ctx.clearRect(0,0,canvas.width,canvas.height);
-  // Planet
-  ctx.fillStyle = "#4fa3ff";
-  ctx.beginPath();
-  ctx.arc(planet.x(),planet.y(),planet.r,0,Math.PI*2);
-  ctx.fill();
-
-  // Trajectory preview
-  if(previewPath.length>0){
-    ctx.strokeStyle = "rgba(255,255,255,0.3)";
+  // draw projectiles
+  for (const p of projectiles) {
     ctx.beginPath();
-    ctx.moveTo(previewPath[0].x,previewPath[0].y);
-    for(const p of previewPath) ctx.lineTo(p.x,p.y);
+    ctx.arc(p.x, p.y, p.r, 0, Math.PI*2);
+    ctx.fillStyle = "#ddd";
+    ctx.fill();
+  }
+
+  // drag preview
+  if (dragging && dragStart && dragCurrent) {
+    ctx.beginPath();
+    ctx.moveTo(dragStart.x, dragStart.y);
+    ctx.lineTo(dragCurrent.x, dragCurrent.y);
+    ctx.strokeStyle = "#f55";
     ctx.stroke();
   }
 
-  // Projectiles
-  for(let ball of projectiles){
-    ctx.fillStyle = "#fff";
-    ctx.beginPath();
-    ctx.arc(ball.x,ball.y,ball.r,0,Math.PI*2);
-    ctx.fill();
-  }
+  requestAnimationFrame(update);
 }
 
-// ---------- Loop ----------
-function loop(){ update(); draw(); requestAnimationFrame(loop); }
-loop();
+update();
 </script>
 </body>
 </html>
