@@ -1,260 +1,295 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<meta charset="UTF-8" />
-<title>Gravity Sandbox</title>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>Gravity Sandbox - Piles & Friction</title>
 <style>
-  body {
-    margin: 0;
-    background: #111;
-    color: #eee;
-    font-family: sans-serif;
-    overflow: hidden;
-  }
-  canvas {
-    display: block;
-  }
-  #ui {
-    position: fixed;
-    top: 10px;
-    left: 10px;
-    z-index: 10;
-    background: rgba(0,0,0,0.75);
-    padding: 10px;
-    border-radius: 8px;
-  }
-  label {
-    display: block;
-    margin-top: 6px;
-    user-select: none;
-  }
+html, body {
+  margin: 0; padding: 0;
+  background: #000; overflow: hidden;
+  touch-action: none;
+  font-family: sans-serif;
+  color: #fff;
+}
+canvas { display: block; }
+.controls {
+  position: absolute;
+  top: 10px;
+  left: 10px;
+  background: rgba(0,0,0,0.6);
+  padding: 10px;
+  border-radius: 8px;
+}
+.controls label { display: block; margin: 5px 0; }
+.controls input[type=range] { width: 150px; }
+button, input[type=checkbox] {
+  margin-top: 5px;
+  cursor: pointer;
+}
+button {
+  width: 100%;
+  padding: 5px;
+  border-radius: 5px;
+  border: none;
+  background: #f55;
+  color: #fff;
+  font-weight: bold;
+}
+button:hover { background: #f88; }
 </style>
 </head>
 <body>
+<canvas id="c"></canvas>
 
-<canvas id="canvas"></canvas>
-
-<div id="ui">
-  <button id="clear">Clear Projectiles</button>
-  <label>
-    <input type="checkbox" id="collisions">
-    Enable Collisions
+<div class="controls">
+  <label>Central Mass: <span id="cmassVal">5000</span>
+    <input id="cmass" type="range" min="100" max="20000" value="5000">
   </label>
+  <label>Central Radius: <span id="cradVal">30</span>
+    <input id="crad" type="range" min="10" max="100" value="30">
+  </label>
+  <label>Projectile Mass: <span id="pmassVal">1</span>
+    <input id="pmass" type="range" min="1" max="50" value="1">
+  </label>
+  <label>Projectile Radius: <span id="pradVal">6</span>
+    <input id="prad" type="range" min="2" max="20" value="6">
+  </label>
+  <label><input type="checkbox" id="collideToggle"> Collisions ON</label>
+  <button id="clearBtn">Clear All Projectiles</button>
 </div>
 
 <script>
-const canvas = document.getElementById("canvas");
+const canvas = document.getElementById("c");
 const ctx = canvas.getContext("2d");
 
-function resize() {
-  canvas.width = innerWidth;
-  canvas.height = innerHeight;
-}
+function resize() { canvas.width = window.innerWidth; canvas.height = window.innerHeight; }
 resize();
 window.addEventListener("resize", resize);
 
-// ----------------- World -----------------
 const G = 1200;
+let centralMass = 5000;
+let centralRadius = 30;
+let projectileMass = 1;
+let projectileRadius = 6;
+const dt = 1/60;
 
 const planet = {
-  x: () => canvas.width / 2,
-  y: () => canvas.height / 2,
-  r: 60,
-  mass: 5000
+  x: () => canvas.width/2,
+  y: () => canvas.height/2,
+  r: centralRadius
 };
 
-const projectiles = [];
-let collisionsEnabled = false;
+let projectiles = [];
+let previewPath = [];
+let touchStart = null;
+const damping = 0.95; // energy loss on collisions
+const friction = 0.85; // tangential friction on planet surface
 
-document.getElementById("collisions").onchange =
-  e => collisionsEnabled = e.target.checked;
+// ---------- Input controls ----------
+document.getElementById("cmass").addEventListener("input", e => {
+  centralMass = +e.target.value;
+  document.getElementById("cmassVal").innerText = centralMass;
+});
+document.getElementById("crad").addEventListener("input", e => {
+  centralRadius = +e.target.value;
+  planet.r = centralRadius;
+  document.getElementById("cradVal").innerText = centralRadius;
+});
+document.getElementById("pmass").addEventListener("input", e => {
+  projectileMass = +e.target.value;
+  document.getElementById("pmassVal").innerText = projectileMass;
+});
+document.getElementById("prad").addEventListener("input", e => {
+  projectileRadius = +e.target.value;
+  document.getElementById("pradVal").innerText = projectileRadius;
+});
+const collideToggle = document.getElementById("collideToggle");
 
-document.getElementById("clear").onclick =
-  () => projectiles.length = 0;
+// Clear button
+document.getElementById("clearBtn").addEventListener("click", ()=>{ projectiles = []; });
 
-// ----------------- Input (mouse + touch) -----------------
-let dragging = false;
-let dragStart = null;
-let dragCurrent = null;
-
-function getPos(e) {
-  if (e.touches) {
-    return { x: e.touches[0].clientX, y: e.touches[0].clientY };
-  }
-  return { x: e.clientX, y: e.clientY };
-}
-
-function startDrag(e) {
-  dragging = true;
-  dragStart = getPos(e);
-  dragCurrent = dragStart;
-}
-
-function moveDrag(e) {
-  if (!dragging) return;
-  dragCurrent = getPos(e);
-}
-
-function endDrag(e) {
-  if (!dragging) return;
-  dragging = false;
-
-  const vx = (dragStart.x - dragCurrent.x) * 0.05;
-  const vy = (dragStart.y - dragCurrent.y) * 0.05;
-
-  projectiles.push({
-    x: dragStart.x,
-    y: dragStart.y,
-    vx, vy,
-    r: 8,
-    mass: 1
-  });
-
-  dragStart = dragCurrent = null;
-}
-
-canvas.addEventListener("mousedown", startDrag);
-canvas.addEventListener("mousemove", moveDrag);
-canvas.addEventListener("mouseup", endDrag);
-
+// ---------- Touch controls ----------
 canvas.addEventListener("touchstart", e => {
-  e.preventDefault();
-  startDrag(e);
-}, { passive: false });
+  const t = e.touches[0];
+  touchStart = { x: t.clientX, y: t.clientY };
+});
 
 canvas.addEventListener("touchmove", e => {
-  e.preventDefault();
-  moveDrag(e);
-}, { passive: false });
+  if (!touchStart) return;
+  const t = e.touches[0];
+  const vx = (touchStart.x - t.clientX) * 0.05;
+  const vy = (touchStart.y - t.clientY) * 0.05;
+  computePreview(t.clientX, t.clientY, vx, vy);
+});
 
 canvas.addEventListener("touchend", e => {
-  e.preventDefault();
-  endDrag(e);
-}, { passive: false });
+  if (!touchStart) return;
+  const t = e.changedTouches[0];
+  const vx = (touchStart.x - t.clientX) * 0.05;
+  const vy = (touchStart.y - t.clientY) * 0.05;
 
-// ----------------- Physics -----------------
-function applyGravity(p) {
-  const dx = planet.x() - p.x;
-  const dy = planet.y() - p.y;
-  const dist = Math.hypot(dx, dy);
-  if (dist === 0) return;
+  projectiles.push({
+    x: t.clientX,
+    y: t.clientY,
+    vx: vx,
+    vy: vy,
+    r: projectileRadius,
+    mass: projectileMass
+  });
 
-  const force = G * planet.mass / (dist * dist);
-  p.vx += force * dx / dist;
-  p.vy += force * dy / dist;
+  touchStart = null;
+  previewPath = [];
+});
+
+// ---------- Trajectory preview ----------
+function computePreview(x, y, vx, vy) {
+  previewPath = [];
+  let px = x, py = y, pvx = vx, pvy = vy;
+  const steps = 200;
+
+  for (let i=0; i<steps; i++){
+    const dx = planet.x() - px;
+    const dy = planet.y() - py;
+    const dist = Math.sqrt(dx*dx + dy*dy);
+
+    if(collideToggle.checked && dist < planet.r + projectileRadius) break;
+
+    const accel = (G*centralMass)/(dist*dist);
+    const ax = accel*dx/dist;
+    const ay = accel*dy/dist;
+
+    pvx += ax*dt;
+    pvy += ay*dt;
+    px += pvx;
+    py += pvy;
+    previewPath.push({x:px,y:py});
+  }
 }
 
-// Planet collision (unchanged logic)
-function resolvePlanetCollision(p) {
-  const dx = p.x - planet.x();
-  const dy = p.y - planet.y();
-  const dist = Math.hypot(dx, dy);
-  const minDist = planet.r + p.r;
-  if (dist >= minDist || dist === 0) return;
+// ---------- Update ----------
+function update(){
+  const collisionOn = collideToggle.checked;
 
-  const nx = dx / dist;
-  const ny = dy / dist;
+  for(let i=0; i<projectiles.length; i++){
+    let ball = projectiles[i];
 
-  p.x = planet.x() + nx * minDist;
-  p.y = planet.y() + ny * minDist;
+    // Vector to planet
+    const dx = planet.x() - ball.x;
+    const dy = planet.y() - ball.y;
+    const dist = Math.sqrt(dx*dx + dy*dy);
 
-  const vn = p.vx * nx + p.vy * ny;
-  const tx = -ny, ty = nx;
-  const vt = p.vx * tx + p.vy * ty;
+    // Central mass collision with friction
+    if(collisionOn && dist < planet.r + ball.r){
+      const nx = dx/dist, ny = dy/dist;
+      const vDotN = ball.vx*nx + ball.vy*ny;
+      const vTangentX = ball.vx - vDotN*nx;
+      const vTangentY = ball.vy - vDotN*ny;
 
-  const restitution = 0.6;
-  const friction = 0.85;
+      // Reflect normal component elastically
+      ball.vx -= 2*vDotN*nx;
+      ball.vy -= 2*vDotN*ny;
 
-  p.vx = -vn * restitution * nx + vt * friction * tx;
-  p.vy = -vn * restitution * ny + vt * friction * ty;
-}
+      // Apply damping to normal and friction to tangent
+      ball.vx = ball.vx*damping - vTangentX*(1-friction);
+      ball.vy = ball.vy*damping - vTangentY*(1-friction);
 
-// Projectile–projectile (same logic style)
-function resolveProjectileCollision(a, b) {
-  const dx = b.x - a.x;
-  const dy = b.y - a.y;
-  const dist = Math.hypot(dx, dy);
-  const minDist = a.r + b.r;
-  if (dist >= minDist || dist === 0) return;
+      // Push out to surface
+      ball.x = planet.x() - nx*(planet.r + ball.r);
+      ball.y = planet.y() - ny*(planet.r + ball.r);
+    }
 
-  const nx = dx / dist;
-  const ny = dy / dist;
+    // Gravity
+    const accel = (G*centralMass)/(dist*dist);
+    ball.vx += accel*dx/dist*dt;
+    ball.vy += accel*dy/dist*dt;
 
-  const overlap = minDist - dist;
-  a.x -= nx * overlap * 0.5;
-  a.y -= ny * overlap * 0.5;
-  b.x += nx * overlap * 0.5;
-  b.y += ny * overlap * 0.5;
-
-  const rvx = a.vx - b.vx;
-  const rvy = a.vy - b.vy;
-  const vn = rvx * nx + rvy * ny;
-  if (vn > 0) return;
-
-  const tx = -ny, ty = nx;
-  const vt = rvx * tx + rvy * ty;
-
-  const restitution = 0.6;
-  const friction = 0.85;
-
-  const impulse = -vn / (1/a.mass + 1/b.mass);
-  const ix = impulse * nx;
-  const iy = impulse * ny;
-
-  a.vx += ix / a.mass;
-  a.vy += iy / a.mass;
-  b.vx -= ix / b.mass;
-  b.vy -= iy / b.mass;
-
-  a.vx -= vt * friction * tx * 0.05;
-  a.vy -= vt * friction * ty * 0.05;
-  b.vx += vt * friction * tx * 0.05;
-  b.vy += vt * friction * ty * 0.05;
-}
-
-// ----------------- Loop -----------------
-function update() {
-  ctx.clearRect(0,0,canvas.width,canvas.height);
-
-  // planet (blue again)
-  ctx.beginPath();
-  ctx.arc(planet.x(), planet.y(), planet.r, 0, Math.PI*2);
-  ctx.fillStyle = "#2a6cff";
-  ctx.fill();
-
-  for (const p of projectiles) {
-    applyGravity(p);
-    p.x += p.vx;
-    p.y += p.vy;
-    if (collisionsEnabled) resolvePlanetCollision(p);
+    // Update position
+    ball.x += ball.vx;
+    ball.y += ball.vy;
   }
 
-  if (collisionsEnabled) {
-    for (let i=0;i<projectiles.length;i++) {
-      for (let j=i+1;j<projectiles.length;j++) {
-        resolveProjectileCollision(projectiles[i], projectiles[j]);
-      }
+// Projectile-projectile collisions (planet-style)
+if(collisionOn){
+  for(let i=0; i<projectiles.length; i++){
+    for(let j=i+1; j<projectiles.length; j++){
+      const a = projectiles[i], b = projectiles[j];
+      const dx = b.x - a.x;
+      const dy = b.y - a.y;
+      const dist = Math.sqrt(dx*dx + dy*dy);
+      const minDist = a.r + b.r;
+      if(dist >= minDist || dist === 0) continue;
+
+      const nx = dx / dist;
+      const ny = dy / dist;
+
+      // Push apart (gentle)
+      const overlap = minDist - dist;
+      a.x -= nx * overlap * 0.5;
+      a.y -= ny * overlap * 0.5;
+      b.x += nx * overlap * 0.5;
+      b.y += ny * overlap * 0.5;
+
+      // Relative velocity
+      const rvx = a.vx - b.vx;
+      const rvy = a.vy - b.vy;
+
+      const vDotN = rvx*nx + rvy*ny;
+      if(vDotN > 0) continue;
+
+      const vTangentX = rvx - vDotN*nx;
+      const vTangentY = rvy - vDotN*ny;
+
+      // Reflect normal
+      a.vx -= vDotN * nx;
+      a.vy -= vDotN * ny;
+      b.vx += vDotN * nx;
+      b.vy += vDotN * ny;
+
+      // Apply damping & friction (same as planet)
+      a.vx = a.vx*damping - vTangentX*(1-friction)*0.5;
+      a.vy = a.vy*damping - vTangentY*(1-friction)*0.5;
+      b.vx = b.vx*damping + vTangentX*(1-friction)*0.5;
+      b.vy = b.vy*damping + vTangentY*(1-friction)*0.5;
     }
   }
+}
 
-  for (const p of projectiles) {
-    ctx.beginPath();
-    ctx.arc(p.x, p.y, p.r, 0, Math.PI*2);
-    ctx.fillStyle = "#ddd";
-    ctx.fill();
-  }
+// ---------- Draw ----------
+function draw(){
+  ctx.clearRect(0,0,canvas.width,canvas.height);
 
-  if (dragging && dragStart && dragCurrent) {
+  // Planet
+  ctx.fillStyle = "#4fa3ff";
+  ctx.beginPath();
+  ctx.arc(planet.x(),planet.y(),planet.r,0,Math.PI*2);
+  ctx.fill();
+
+  // Trajectory preview
+  if(previewPath.length>0){
+    ctx.strokeStyle = "rgba(255,255,255,0.3)";
     ctx.beginPath();
-    ctx.moveTo(dragStart.x, dragStart.y);
-    ctx.lineTo(dragCurrent.x, dragCurrent.y);
-    ctx.strokeStyle = "#f55";
+    ctx.moveTo(previewPath[0].x,previewPath[0].y);
+    for(const p of previewPath) ctx.lineTo(p.x,p.y);
     ctx.stroke();
   }
 
-  requestAnimationFrame(update);
+  // Draw all projectiles
+  for(let ball of projectiles){
+    ctx.fillStyle = "#fff";
+    ctx.beginPath();
+    ctx.arc(ball.x,ball.y,ball.r,0,Math.PI*2);
+    ctx.fill();
+  }
 }
-update();
+
+// ---------- Loop ----------
+function loop(){
+  update();
+  draw();
+  requestAnimationFrame(loop);
+}
+loop();
 </script>
 </body>
 </html>
