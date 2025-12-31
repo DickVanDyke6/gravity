@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-<title>Gravity Sandbox - Fixed</title>
+<title>Gravity Sandbox - Restored</title>
 <style>
 html, body { margin:0; padding:0; background:#000; overflow:hidden; touch-action:none; color:#fff; font-family:sans-serif; }
 canvas { display:block; }
@@ -76,6 +76,7 @@ canvas.addEventListener("touchend", e=>{
   const t=e.changedTouches[0];
   const vx=(touchStart.x - t.clientX)*0.05;
   const vy=(touchStart.y - t.clientY)*0.05;
+  // FIXED: projectile object keys must be valid
   projectiles.push({x:t.clientX, y:t.clientY, vx:vx, vy:vy, r:projectileRadius, mass:projectileMass});
   touchStart=null; previewPath=[];
 });
@@ -84,7 +85,7 @@ canvas.addEventListener("touchend", e=>{
 function computePreview(x,y,vx,vy){
   previewPath=[]; let px=x,py=y,pvx=vx,pvy=vy; const steps=200;
   for(let i=0;i<steps;i++){
-    const dx=planet.x()-px, dy=planet.y()-py, dist=Math.max(Math.sqrt(dx*dx+dy*dy),1);
+    const dx=planet.x()-px, dy=planet.y()-py, dist=Math.sqrt(dx*dx+dy*dy);
     if(collideToggle.checked && dist<planet.r+projectileRadius) break;
     const accel=(G*centralMass)/(dist*dist);
     pvx+=accel*dx/dist*dt; pvy+=accel*dy/dist*dt;
@@ -94,8 +95,7 @@ function computePreview(x,y,vx,vy){
 
 // ---------- Unified collision ----------
 function collide(a,b,applyFriction=false){
-  const dx=b.x-a.x, dy=b.y-a.y;
-  const dist=Math.max(Math.sqrt(dx*dx+dy*dy),0.01);
+  const dx=b.x-a.x, dy=b.y-a.y, dist=Math.max(Math.sqrt(dx*dx+dy*dy),0.01);
   if(dist >= a.r + b.r) return;
   const nx=dx/dist, ny=dy/dist;
   const vxRel=a.vx-b.vx, vyRel=a.vy-b.vy;
@@ -122,7 +122,7 @@ function update(){
   for(let ball of projectiles){
     // Gravity
     const dx=planet.x()-ball.x, dy=planet.y()-ball.y;
-    const dist=Math.max(Math.sqrt(dx*dx+dy*dy),0.01);
+    const dist=Math.sqrt(dx*dx+dy*dy);
     const accel=(G*centralMass)/(dist*dist);
     ball.vx+=accel*dx/dist*dt;
     ball.vy+=accel*dy/dist*dt;
@@ -133,20 +133,8 @@ function update(){
 
     // Planet collision
     if(collisionOn && dist<planet.r+ball.r){
-      const nx=dx/dist, ny=dy/dist;
-      const vDotN=ball.vx*nx + ball.vy*ny;
-      const vTangentX = ball.vx - vDotN*nx;
-      const vTangentY = ball.vy - vDotN*ny;
-
-      ball.vx -= 2*vDotN*nx;
-      ball.vy -= 2*vDotN*ny;
-
-      ball.vx = ball.vx*damping - vTangentX*(1-friction);
-      ball.vy = ball.vy*damping - vTangentY*(1-friction);
-
-      // Push out to surface
-      ball.x = planet.x() - nx*(planet.r + ball.r);
-      ball.y = planet.y() - ny*(planet.r + ball.r);
+      const fakePlanet={x:planet.x(),y:planet.y(),r:planet.r,mass:centralMass,vx:0,vy:0};
+      collide(ball,fakePlanet,true);
     }
   }
 
