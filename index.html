@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-<title>Gravity Sandbox - Unified Collisions</title>
+<title>Gravity Sandbox - Stable Piling</title>
 <style>
 html, body {
   margin: 0; padding: 0;
@@ -151,23 +151,23 @@ function collide(a,b,applyFriction=false){
   const dist = Math.sqrt(dx*dx + dy*dy);
   if(dist===0 || dist >= a.r + b.r) return;
   const nx = dx/dist, ny = dy/dist;
-  const vxRel = a.vx - b.vx;
-  const vyRel = a.vy - b.vy;
+  const vxRel = a.vx - (b.vx||0);
+  const vyRel = a.vy - (b.vy||0);
   const vDotN = vxRel*nx + vyRel*ny;
-  if(vDotN > 0) return;
+  if(vDotN > 0 && !applyFriction) return; // only ignore if normal proj-proj
   const m1=a.mass, m2=b.mass;
   const impulse = (2*vDotN)/(m1+m2);
   a.vx -= impulse*m2*nx; a.vy -= impulse*m2*ny;
-  b.vx += impulse*m1*nx; b.vy += impulse*m1*ny;
+  if(b.vx!==undefined){ b.vx += impulse*m1*nx; b.vy += impulse*m1*ny; }
   if(applyFriction){
     const vTanX = a.vx - vDotN*nx;
     const vTanY = a.vy - vDotN*ny;
     a.vx -= vTanX*(1-friction);
     a.vy -= vTanY*(1-friction);
   }
-  const overlap = a.r + b.r - dist;
+  const overlap = a.r + (b.r||0) - dist;
   a.x -= nx*overlap/2; a.y -= ny*overlap/2;
-  b.x += nx*overlap/2; b.y += ny*overlap/2;
+  if(b.x!==undefined){ b.x += nx*overlap/2; b.y += ny*overlap/2; }
 }
 
 // ---------- Update ----------
@@ -178,15 +178,17 @@ function update(){
     const dy = planet.y() - ball.y;
     const dist = Math.sqrt(dx*dx + dy*dy);
 
-    // Planet collision
-    if(collisionOn && dist < planet.r + ball.r){
-      collide(ball, {x:planet.x(), y:planet.y(), vx:0, vy:0, mass:1e20}, true);
+    // Planet collision handled separately
+    if(dist < planet.r + ball.r){
+      collide(ball, {x:planet.x(), y:planet.y(), r:planet.r, mass:1e20}, true);
     }
 
     // Gravity
     const accel = (G*centralMass)/(dist*dist);
     ball.vx += accel*dx/dist*dt;
     ball.vy += accel*dy/dist*dt;
+
+    // Update position
     ball.x += ball.vx; ball.y += ball.vy;
   }
 
@@ -209,7 +211,7 @@ function draw(){
   ctx.arc(planet.x(),planet.y(),planet.r,0,Math.PI*2);
   ctx.fill();
 
-  // Trajectory
+  // Trajectory preview
   if(previewPath.length>0){
     ctx.strokeStyle = "rgba(255,255,255,0.3)";
     ctx.beginPath();
