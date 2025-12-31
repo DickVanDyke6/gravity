@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-<title>Gravity Sandbox - Piles & Friction</title>
+<title>Gravity Sandbox - Image Planet</title>
 <style>
 html, body {
   margin: 0; padding: 0;
@@ -71,15 +71,22 @@ function resize() {
 resize();
 addEventListener("resize", resize);
 
+// ---------- Planet image ----------
+const planetImage = new Image();
+planetImage.src = "planet.jpeg";
+let planetImageLoaded = false;
+planetImage.onload = () => planetImageLoaded = true;
+
+// ---------- Constants ----------
 const G = 1200;
 const dt = 1/60;
+const damping = 0.95;
+const friction = 0.85;
+
 let centralMass = 5000;
 let centralRadius = 30;
 let projectileMass = 1;
 let projectileRadius = 6;
-
-const damping = 0.95;
-const friction = 0.85;
 
 const planet = {
   x: () => canvas.width / 2,
@@ -109,7 +116,6 @@ prad.oninput = e => {
   projectileRadius = +e.target.value;
   pradVal.textContent = projectileRadius;
 };
-
 clearBtn.onclick = () => projectiles = [];
 
 // ---------- Touch ----------
@@ -121,25 +127,25 @@ canvas.addEventListener("touchstart", e => {
 canvas.addEventListener("touchmove", e => {
   if (!touchStart) return;
   const t = e.touches[0];
-  const vx = (touchStart.x - t.clientX) * 0.05;
-  const vy = (touchStart.y - t.clientY) * 0.05;
-  computePreview(t.clientX, t.clientY, vx, vy);
+  computePreview(
+    t.clientX,
+    t.clientY,
+    (touchStart.x - t.clientX) * 0.05,
+    (touchStart.y - t.clientY) * 0.05
+  );
 });
 
 canvas.addEventListener("touchend", e => {
   if (!touchStart) return;
   const t = e.changedTouches[0];
-  const vx = (touchStart.x - t.clientX) * 0.05;
-  const vy = (touchStart.y - t.clientY) * 0.05;
-
   projectiles.push({
     x: t.clientX,
     y: t.clientY,
-    vx, vy,
+    vx: (touchStart.x - t.clientX) * 0.05,
+    vy: (touchStart.y - t.clientY) * 0.05,
     r: projectileRadius,
     mass: projectileMass
   });
-
   touchStart = null;
   previewPath = [];
 });
@@ -159,9 +165,9 @@ function computePreview(x, y, vx, vy) {
     const a = (G * centralMass) / (dist * dist);
     pvx += a * dx / dist * dt;
     pvy += a * dy / dist * dt;
-
     px += pvx;
     py += pvy;
+
     previewPath.push({ x: px, y: py });
   }
 }
@@ -175,12 +181,11 @@ function update() {
     const dy = planet.y() - ball.y;
     const dist = Math.hypot(dx, dy);
 
-    // Central collision (UNCHANGED)
+    // Central collision (unchanged)
     if (collisionOn && dist < planet.r + ball.r) {
       const nx = dx / dist;
       const ny = dy / dist;
       const vDotN = ball.vx * nx + ball.vy * ny;
-
       const vTx = ball.vx - vDotN * nx;
       const vTy = ball.vy - vDotN * ny;
 
@@ -216,8 +221,8 @@ function update() {
 
         const nx = dx / dist;
         const ny = dy / dist;
-
         const overlap = minDist - dist;
+
         a.x -= nx * overlap * 0.5;
         a.y -= ny * overlap * 0.5;
         b.x += nx * overlap * 0.5;
@@ -247,13 +252,32 @@ function update() {
 
 // ---------- Draw ----------
 function draw() {
-  ctx.clearRect(0,0,canvas.width,canvas.height);
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-  ctx.fillStyle = "#4fa3ff";
-  ctx.beginPath();
-  ctx.arc(planet.x(), planet.y(), planet.r, 0, Math.PI*2);
-  ctx.fill();
+  // Planet with circular masking
+  if (planetImageLoaded) {
+    ctx.save();
+    ctx.beginPath();
+    ctx.arc(planet.x(), planet.y(), planet.r, 0, Math.PI * 2);
+    ctx.clip();
 
+    ctx.drawImage(
+      planetImage,
+      planet.x() - planet.r,
+      planet.y() - planet.r,
+      planet.r * 2,
+      planet.r * 2
+    );
+
+    ctx.restore();
+  } else {
+    ctx.fillStyle = "#4fa3ff";
+    ctx.beginPath();
+    ctx.arc(planet.x(), planet.y(), planet.r, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  // Trajectory
   if (previewPath.length) {
     ctx.strokeStyle = "rgba(255,255,255,0.3)";
     ctx.beginPath();
@@ -262,10 +286,11 @@ function draw() {
     ctx.stroke();
   }
 
+  // Projectiles
   ctx.fillStyle = "#fff";
   for (const b of projectiles) {
     ctx.beginPath();
-    ctx.arc(b.x, b.y, b.r, 0, Math.PI*2);
+    ctx.arc(b.x, b.y, b.r, 0, Math.PI * 2);
     ctx.fill();
   }
 }
