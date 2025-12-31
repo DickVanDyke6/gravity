@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-<title>Gravity Sandbox - Piles & Friction Fixed</title>
+<title>Gravity Sandbox - Fixed</title>
 <style>
 html, body { margin:0; padding:0; background:#000; overflow:hidden; touch-action:none; color:#fff; font-family:sans-serif; }
 canvas { display:block; }
@@ -76,7 +76,7 @@ canvas.addEventListener("touchend", e=>{
   const t=e.changedTouches[0];
   const vx=(touchStart.x - t.clientX)*0.05;
   const vy=(touchStart.y - t.clientY)*0.05;
-  projectiles.push({x:t.clientX,y:t.clientY,vx,vy,r:projectileRadius,mass:projectileMass});
+  projectiles.push({x:t.clientX, y:t.clientY, vx:vx, vy:vy, r:projectileRadius, mass:projectileMass});
   touchStart=null; previewPath=[];
 });
 
@@ -84,7 +84,7 @@ canvas.addEventListener("touchend", e=>{
 function computePreview(x,y,vx,vy){
   previewPath=[]; let px=x,py=y,pvx=vx,pvy=vy; const steps=200;
   for(let i=0;i<steps;i++){
-    const dx=planet.x()-px, dy=planet.y()-py, dist=Math.sqrt(dx*dx+dy*dy);
+    const dx=planet.x()-px, dy=planet.y()-py, dist=Math.max(Math.sqrt(dx*dx+dy*dy),1);
     if(collideToggle.checked && dist<planet.r+projectileRadius) break;
     const accel=(G*centralMass)/(dist*dist);
     pvx+=accel*dx/dist*dt; pvy+=accel*dy/dist*dt;
@@ -94,8 +94,9 @@ function computePreview(x,y,vx,vy){
 
 // ---------- Unified collision ----------
 function collide(a,b,applyFriction=false){
-  const dx=b.x-a.x, dy=b.y-a.y, dist=Math.sqrt(dx*dx+dy*dy);
-  if(dist===0 || dist>=a.r+b.r) return;
+  const dx=b.x-a.x, dy=b.y-a.y;
+  const dist=Math.max(Math.sqrt(dx*dx+dy*dy),0.01);
+  if(dist >= a.r + b.r) return;
   const nx=dx/dist, ny=dy/dist;
   const vxRel=a.vx-b.vx, vyRel=a.vy-b.vy;
   const vDotN=vxRel*nx + vyRel*ny;
@@ -119,8 +120,16 @@ function collide(a,b,applyFriction=false){
 function update(){
   const collisionOn=collideToggle.checked;
   for(let ball of projectiles){
-    // Vector to planet
-    const dx=planet.x()-ball.x, dy=planet.y()-ball.y, dist=Math.sqrt(dx*dx+dy*dy);
+    // Gravity
+    const dx=planet.x()-ball.x, dy=planet.y()-ball.y;
+    const dist=Math.max(Math.sqrt(dx*dx+dy*dy),0.01);
+    const accel=(G*centralMass)/(dist*dist);
+    ball.vx+=accel*dx/dist*dt;
+    ball.vy+=accel*dy/dist*dt;
+
+    // Update position
+    ball.x+=ball.vx;
+    ball.y+=ball.vy;
 
     // Planet collision
     if(collisionOn && dist<planet.r+ball.r){
@@ -139,14 +148,6 @@ function update(){
       ball.x = planet.x() - nx*(planet.r + ball.r);
       ball.y = planet.y() - ny*(planet.r + ball.r);
     }
-
-    // Gravity
-    const accel=(G*centralMass)/(dist*dist);
-    ball.vx+=accel*dx/dist*dt;
-    ball.vy+=accel*dy/dist*dt;
-
-    // Update position
-    ball.x+=ball.vx; ball.y+=ball.vy;
   }
 
   // Projectile-projectile collisions
