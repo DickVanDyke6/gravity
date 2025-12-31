@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-<title>Gravity Sandbox - Unified Collisions</title>
+<title>Gravity Sandbox - Piles & Friction Fixed</title>
 <style>
 html, body { margin:0; padding:0; background:#000; overflow:hidden; touch-action:none; color:#fff; font-family:sans-serif; }
 canvas { display:block; }
@@ -76,7 +76,7 @@ canvas.addEventListener("touchend", e=>{
   const t=e.changedTouches[0];
   const vx=(touchStart.x - t.clientX)*0.05;
   const vy=(touchStart.y - t.clientY)*0.05;
-  projectiles.push({x:t.clientX,y:t.clientY,vx,v,y:vy,r:projectileRadius,mass:projectileMass});
+  projectiles.push({x:t.clientX,y:t.clientY,vx,vy,r:projectileRadius,mass:projectileMass});
   touchStart=null; previewPath=[];
 });
 
@@ -124,8 +124,20 @@ function update(){
 
     // Planet collision
     if(collisionOn && dist<planet.r+ball.r){
-      const fakePlanet={x:planet.x(),y:planet.y(),r:planet.r,mass:Infinity,vx:0,vy:0};
-      collide(ball,fakePlanet,true);
+      const nx=dx/dist, ny=dy/dist;
+      const vDotN=ball.vx*nx + ball.vy*ny;
+      const vTangentX = ball.vx - vDotN*nx;
+      const vTangentY = ball.vy - vDotN*ny;
+
+      ball.vx -= 2*vDotN*nx;
+      ball.vy -= 2*vDotN*ny;
+
+      ball.vx = ball.vx*damping - vTangentX*(1-friction);
+      ball.vy = ball.vy*damping - vTangentY*(1-friction);
+
+      // Push out to surface
+      ball.x = planet.x() - nx*(planet.r + ball.r);
+      ball.y = planet.y() - ny*(planet.r + ball.r);
     }
 
     // Gravity
