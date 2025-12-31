@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-<title>Gravity Toy</title>
+<title>Gravity Toy with Trajectory Preview</title>
 <style>
   html, body {
     margin: 0;
@@ -45,6 +45,8 @@ const planet = {
 
 // Projectile
 let ball = resetBall();
+let previewPath = [];
+let touchStart = null;
 
 function resetBall() {
   return {
@@ -58,11 +60,10 @@ function resetBall() {
 }
 
 // ---------- Touch controls ----------
-let touchStart = null;
-
 canvas.addEventListener("touchstart", e => {
   const t = e.touches[0];
   touchStart = { x: t.clientX, y: t.clientY };
+
   ball = {
     ...ball,
     x: t.clientX,
@@ -71,6 +72,18 @@ canvas.addEventListener("touchstart", e => {
     vy: 0,
     active: false
   };
+
+  previewPath = [];
+});
+
+canvas.addEventListener("touchmove", e => {
+  if (!touchStart) return;
+  const t = e.touches[0];
+
+  const vx = (touchStart.x - t.clientX) * 0.05;
+  const vy = (touchStart.y - t.clientY) * 0.05;
+
+  computePreview(ball.x, ball.y, vx, vy);
 });
 
 canvas.addEventListener("touchend", e => {
@@ -80,7 +93,41 @@ canvas.addEventListener("touchend", e => {
   ball.vy = (touchStart.y - t.clientY) * 0.05;
   ball.active = true;
   touchStart = null;
+  previewPath = [];
 });
+
+// ---------- Trajectory preview ----------
+function computePreview(x, y, vx, vy) {
+  previewPath = [];
+
+  let px = x;
+  let py = y;
+  let pvx = vx;
+  let pvy = vy;
+
+  const steps = 200;
+  const stepDt = dt;
+
+  for (let i = 0; i < steps; i++) {
+    const dx = planet.x() - px;
+    const dy = planet.y() - py;
+    const distSq = dx * dx + dy * dy;
+    const dist = Math.sqrt(distSq);
+
+    if (dist < planet.r + ball.r) break;
+
+    const accel = (G * centralMass) / distSq;
+    const ax = accel * dx / dist;
+    const ay = accel * dy / dist;
+
+    pvx += ax * stepDt;
+    pvy += ay * stepDt;
+    px += pvx;
+    py += pvy;
+
+    previewPath.push({ x: px, y: py });
+  }
+}
 
 // ---------- Update ----------
 function update() {
@@ -91,18 +138,15 @@ function update() {
   const distSq = dx * dx + dy * dy;
   const dist = Math.sqrt(distSq);
 
-  // Collision
   if (dist < planet.r + ball.r) {
     ball = resetBall();
     return;
   }
 
-  // Gravity
   const accel = (G * centralMass) / distSq;
   const ax = accel * dx / dist;
   const ay = accel * dy / dist;
 
-  // Semi-implicit Euler
   ball.vx += ax * dt;
   ball.vy += ay * dt;
   ball.x += ball.vx;
@@ -118,6 +162,17 @@ function draw() {
   ctx.beginPath();
   ctx.arc(planet.x(), planet.y(), planet.r, 0, Math.PI * 2);
   ctx.fill();
+
+  // Trajectory preview
+  if (previewPath.length > 0) {
+    ctx.strokeStyle = "rgba(255,255,255,0.3)";
+    ctx.beginPath();
+    ctx.moveTo(previewPath[0].x, previewPath[0].y);
+    for (let p of previewPath) {
+      ctx.lineTo(p.x, p.y);
+    }
+    ctx.stroke();
+  }
 
   // Ball
   ctx.fillStyle = "#fff";
