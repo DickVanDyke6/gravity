@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-<title>Gravity Toy with Trajectory Preview</title>
+<title>Gravity Toy with Configurable Mass & Radius</title>
 <style>
   html, body {
     margin: 0;
@@ -11,14 +11,39 @@
     background: #000;
     overflow: hidden;
     touch-action: none;
+    font-family: sans-serif;
+    color: #fff;
   }
-  canvas {
-    display: block;
+  canvas { display: block; }
+  .controls {
+    position: absolute;
+    top: 10px;
+    left: 10px;
+    background: rgba(0,0,0,0.6);
+    padding: 10px;
+    border-radius: 8px;
   }
+  .controls label { display: block; margin: 5px 0; }
+  .controls input { width: 150px; }
 </style>
 </head>
 <body>
 <canvas id="c"></canvas>
+
+<div class="controls">
+  <label>Central Mass: <span id="cmassVal">5000</span>
+    <input id="cmass" type="range" min="100" max="20000" value="5000">
+  </label>
+  <label>Central Radius: <span id="cradVal">30</span>
+    <input id="crad" type="range" min="10" max="100" value="30">
+  </label>
+  <label>Projectile Mass: <span id="pmassVal">1</span>
+    <input id="pmass" type="range" min="1" max="50" value="1">
+  </label>
+  <label>Projectile Radius: <span id="pradVal">6</span>
+    <input id="prad" type="range" min="2" max="20" value="6">
+  </label>
+</div>
 
 <script>
 const canvas = document.getElementById("c");
@@ -32,15 +57,18 @@ resize();
 window.addEventListener("resize", resize);
 
 // ---------- Physics ----------
-const G = 1200;               // gravitational constant (tuned)
-const centralMass = 5000;
-const dt = 1 / 60;
+let G = 1200;               // gravitational constant
+let centralMass = 5000;
+let centralRadius = 30;
+let projectileMass = 1;     // currently only for display/future extensions
+let projectileRadius = 6;
+const dt = 1/60;
 
 // Central body
 const planet = {
   x: () => canvas.width / 2,
   y: () => canvas.height / 2,
-  r: 30
+  r: centralRadius
 };
 
 // Projectile
@@ -54,10 +82,21 @@ function resetBall() {
     y: canvas.height / 2,
     vx: 0,
     vy: 0,
-    r: 6,
+    r: projectileRadius,
     active: false
   };
 }
+
+// ---------- Input controls ----------
+const cmassSlider = document.getElementById("cmass");
+const cradSlider = document.getElementById("crad");
+const pmassSlider = document.getElementById("pmass");
+const pradSlider = document.getElementById("prad");
+
+cmassSlider.addEventListener("input", ()=>{ centralMass = +cmassSlider.value; document.getElementById("cmassVal").innerText = centralMass; });
+cradSlider.addEventListener("input", ()=>{ centralRadius = +cradSlider.value; document.getElementById("cradVal").innerText = centralRadius; planet.r = centralRadius; });
+pmassSlider.addEventListener("input", ()=>{ projectileMass = +pmassSlider.value; document.getElementById("pmassVal").innerText = projectileMass; });
+pradSlider.addEventListener("input", ()=>{ projectileRadius = +pradSlider.value; document.getElementById("pradVal").innerText = projectileRadius; ball.r = projectileRadius; });
 
 // ---------- Touch controls ----------
 canvas.addEventListener("touchstart", e => {
@@ -70,7 +109,8 @@ canvas.addEventListener("touchstart", e => {
     y: t.clientY,
     vx: 0,
     vy: 0,
-    active: false
+    active: false,
+    r: projectileRadius
   };
 
   previewPath = [];
@@ -79,10 +119,8 @@ canvas.addEventListener("touchstart", e => {
 canvas.addEventListener("touchmove", e => {
   if (!touchStart) return;
   const t = e.touches[0];
-
   const vx = (touchStart.x - t.clientX) * 0.05;
   const vy = (touchStart.y - t.clientY) * 0.05;
-
   computePreview(ball.x, ball.y, vx, vy);
 });
 
@@ -104,14 +142,13 @@ function computePreview(x, y, vx, vy) {
   let py = y;
   let pvx = vx;
   let pvy = vy;
-
   const steps = 200;
   const stepDt = dt;
 
   for (let i = 0; i < steps; i++) {
     const dx = planet.x() - px;
     const dy = planet.y() - py;
-    const distSq = dx * dx + dy * dy;
+    const distSq = dx*dx + dy*dy;
     const dist = Math.sqrt(distSq);
 
     if (dist < planet.r + ball.r) break;
@@ -125,7 +162,7 @@ function computePreview(x, y, vx, vy) {
     px += pvx;
     py += pvy;
 
-    previewPath.push({ x: px, y: py });
+    previewPath.push({ x:px, y:py });
   }
 }
 
@@ -135,7 +172,7 @@ function update() {
 
   const dx = planet.x() - ball.x;
   const dy = planet.y() - ball.y;
-  const distSq = dx * dx + dy * dy;
+  const distSq = dx*dx + dy*dy;
   const dist = Math.sqrt(distSq);
 
   if (dist < planet.r + ball.r) {
@@ -155,43 +192,41 @@ function update() {
 
 // ---------- Draw ----------
 function draw() {
-  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  ctx.clearRect(0,0,canvas.width,canvas.height);
 
   // Planet
   ctx.fillStyle = "#4fa3ff";
   ctx.beginPath();
-  ctx.arc(planet.x(), planet.y(), planet.r, 0, Math.PI * 2);
+  ctx.arc(planet.x(), planet.y(), planet.r, 0, Math.PI*2);
   ctx.fill();
 
   // Trajectory preview
-  if (previewPath.length > 0) {
+  if(previewPath.length>0){
     ctx.strokeStyle = "rgba(255,255,255,0.3)";
     ctx.beginPath();
     ctx.moveTo(previewPath[0].x, previewPath[0].y);
-    for (let p of previewPath) {
-      ctx.lineTo(p.x, p.y);
-    }
+    for(const p of previewPath) ctx.lineTo(p.x,p.y);
     ctx.stroke();
   }
 
   // Ball
   ctx.fillStyle = "#fff";
   ctx.beginPath();
-  ctx.arc(ball.x, ball.y, ball.r, 0, Math.PI * 2);
+  ctx.arc(ball.x, ball.y, ball.r, 0, Math.PI*2);
   ctx.fill();
 
   // Aim line
-  if (touchStart) {
+  if(touchStart){
     ctx.strokeStyle = "#888";
     ctx.beginPath();
-    ctx.moveTo(touchStart.x, touchStart.y);
-    ctx.lineTo(ball.x, ball.y);
+    ctx.moveTo(touchStart.x,touchStart.y);
+    ctx.lineTo(ball.x,ball.y);
     ctx.stroke();
   }
 }
 
 // ---------- Loop ----------
-function loop() {
+function loop(){
   update();
   draw();
   requestAnimationFrame(loop);
