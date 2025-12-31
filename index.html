@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-<title>Gravity Sandbox - Toggle Collisions</title>
+<title>Gravity Sandbox - Elastic Collisions</title>
 <style>
 html, body {
   margin: 0; padding: 0;
@@ -83,6 +83,7 @@ const planet = {
 let projectiles = [];
 let previewPath = [];
 let touchStart = null;
+const damping = 0.98; // slight energy loss to settle pile
 
 // ---------- Input controls ----------
 document.getElementById("cmass").addEventListener("input", e => {
@@ -133,8 +134,7 @@ canvas.addEventListener("touchend", e => {
     vx: vx,
     vy: vy,
     r: projectileRadius,
-    mass: projectileMass,
-    stopped: false
+    mass: projectileMass
   });
 
   touchStart = null;
@@ -151,6 +151,7 @@ function computePreview(x, y, vx, vy) {
     const dx = planet.x() - px;
     const dy = planet.y() - py;
     const dist = Math.sqrt(dx*dx + dy*dy);
+
     if(collideToggle.checked && dist < planet.r + projectileRadius) break;
 
     const accel = (G*centralMass)/(dist*dist);
@@ -159,9 +160,45 @@ function computePreview(x, y, vx, vy) {
 
     pvx += ax*dt;
     pvy += ay*dt;
-    px += pvx; py += pvy;
+    px += pvx;
+    py += pvy;
     previewPath.push({x:px,y:py});
   }
+}
+
+// ---------- Helper for elastic collision ----------
+function resolveElasticCollision(a,b){
+  const dx = b.x - a.x;
+  const dy = b.y - a.y;
+  const dist = Math.sqrt(dx*dx + dy*dy);
+  if(dist===0) return; // avoid division by zero
+
+  // Normal vector
+  const nx = dx/dist;
+  const ny = dy/dist;
+
+  // Relative velocity
+  const vxRel = a.vx - b.vx;
+  const vyRel = a.vy - b.vy;
+
+  const vRelAlongN = vxRel*nx + vyRel*ny;
+  if(vRelAlongN > 0) return; // moving away
+
+  // Elastic impulse
+  const m1 = a.mass, m2 = b.mass;
+  const impulse = (2*vRelAlongN)/(m1+m2);
+
+  a.vx -= impulse * m2 * nx;
+  a.vy -= impulse * m2 * ny;
+  b.vx += impulse * m1 * nx;
+  b.vy += impulse * m1 * ny;
+
+  // Slightly separate to prevent sticking
+  const overlap = a.r + b.r - dist;
+  a.x -= nx * overlap/2;
+  a.y -= ny * overlap/2;
+  b.x += nx * overlap/2;
+  b.y += ny * overlap/2;
 }
 
 // ---------- Update ----------
@@ -170,53 +207,48 @@ function update(){
 
   for(let i=0; i<projectiles.length; i++){
     let ball = projectiles[i];
-    if(ball.stopped) continue;
 
     // Vector to planet
     const dx = planet.x() - ball.x;
     const dy = planet.y() - ball.y;
     const dist = Math.sqrt(dx*dx + dy*dy);
 
-    // Central collision
+    // Central mass collision
     if(collisionOn && dist < planet.r + ball.r){
-      ball.stopped = true;
-      ball.vx = 0; ball.vy = 0;
-      // place on edge
-      ball.x = planet.x() + (dx/dist)*(planet.r + ball.r);
-      ball.y = planet.y() + (dy/dist)*(planet.r + ball.r);
-      continue;
+      // Reflect velocity elastically
+      const nx = dx/dist, ny = dy/dist;
+      const vDotN = ball.vx*nx + ball.vy*ny;
+      ball.vx -= 2*vDotN*nx;
+      ball.vy -= 2*vDotN*ny;
+
+      // Apply damping so pile settles
+      ball.vx *= damping;
+      ball.vy *= damping;
+
+      // Push out to surface
+      ball.x = planet.x() - nx*(planet.r + ball.r);
+      ball.y = planet.y() - ny*(planet.r + ball.r);
     }
 
-    // Apply gravity
+    // Gravity
     const accel = (G*centralMass)/(dist*dist);
     ball.vx += accel*dx/dist*dt;
     ball.vy += accel*dy/dist*dt;
+
+    // Update position
     ball.x += ball.vx;
     ball.y += ball.vy;
+  }
 
-    // Projectile collisions if toggle ON
-    if(collisionOn){
-      for(let j=0; j<projectiles.length; j++){
-        if(i===j) continue;
-        let other = projectiles[j];
-
-        const dx2 = ball.x - other.x;
-        const dy2 = ball.y - other.y;
-        const dist2 = Math.sqrt(dx2*dx2 + dy2*dy2);
-
-        if(dist2 < ball.r + other.r){
-          // Inelastic stop and stack
-          ball.stopped = true;
-          ball.vx = 0; ball.vy = 0;
-          const overlap = (ball.r + other.r) - dist2;
-          if(dist2!==0){
-            ball.x += (dx2/dist2)*overlap;
-            ball.y += (dy2/dist2)*overlap;
-          } else {
-            // rare exact overlap
-            ball.x += overlap; 
-          }
-          break; // stop checking further collisions
+  // Projectile-projectile collisions
+  if(collisionOn){
+    for(let i=0; i<projectiles.length; i++){
+      for(let j=i+1; j<projectiles.length; j++){
+        const a = projectiles[i], b = projectiles[j];
+        const dx = b.x - a.x, dy = b.y - a.y;
+        const dist = Math.sqrt(dx*dx + dy*dy);
+        if(dist < a.r + b.r){
+          resolveElasticCollision(a,b);
         }
       }
     }
