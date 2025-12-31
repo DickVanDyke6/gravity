@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-<title>Gravity Sandbox - Endless Projectiles</title>
+<title>Gravity Sandbox - Collisions & Piling</title>
 <style>
 html, body {
   margin: 0; padding: 0;
@@ -129,7 +129,8 @@ canvas.addEventListener("touchend", e => {
     vx: vx,
     vy: vy,
     r: projectileRadius,
-    mass: projectileMass
+    mass: projectileMass,
+    stopped: false
   });
 
   touchStart = null;
@@ -161,12 +162,15 @@ function computePreview(x, y, vx, vy) {
 
 // ---------- Update ----------
 function update(){
-  for(let ball of projectiles){
+  for(let i=0; i<projectiles.length; i++){
+    let ball = projectiles[i];
+    if(ball.stopped) continue;
+
+    // Gravitational force
     const dx = planet.x() - ball.x;
     const dy = planet.y() - ball.y;
     const distSq = dx*dx + dy*dy;
     const dist = Math.sqrt(distSq);
-
     const accel = (G*centralMass)/distSq;
     const ax = accel*dx/dist;
     const ay = accel*dy/dist;
@@ -175,6 +179,32 @@ function update(){
     ball.vy += ay*dt;
     ball.x += ball.vx;
     ball.y += ball.vy;
+
+    // Collision with planet
+    if(dist < planet.r + ball.r){
+      ball.stopped = true;
+      ball.x = planet.x() + (dx/dist)*(planet.r + ball.r);
+      ball.y = planet.y() + (dy/dist)*(planet.r + ball.r);
+      ball.vx = 0; ball.vy = 0;
+    }
+
+    // Collision with other projectiles (pile up)
+    for(let j=0; j<projectiles.length; j++){
+      if(i===j) continue;
+      let other = projectiles[j];
+      if(other.stopped){
+        const dx2 = ball.x - other.x;
+        const dy2 = ball.y - other.y;
+        const dist2 = Math.sqrt(dx2*dx2 + dy2*dy2);
+        if(dist2 < ball.r + other.r){
+          ball.stopped = true;
+          const overlap = (ball.r + other.r) - dist2;
+          ball.x += (dx2/dist2)*overlap;
+          ball.y += (dy2/dist2)*overlap;
+          ball.vx = 0; ball.vy = 0;
+        }
+      }
+    }
   }
 }
 
@@ -203,15 +233,6 @@ function draw(){
     ctx.beginPath();
     ctx.arc(ball.x,ball.y,ball.r,0,Math.PI*2);
     ctx.fill();
-  }
-
-  // Aim line
-  if(touchStart){
-    ctx.strokeStyle = "#888";
-    ctx.beginPath();
-    ctx.moveTo(touchStart.x,touchStart.y);
-    ctx.lineTo(touchStart.x,touchStart.y); // optional, can extend to current touch
-    ctx.stroke();
   }
 }
 
