@@ -3,28 +3,26 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-<title>Gravity Toy with Configurable Mass & Radius</title>
+<title>Gravity Sandbox - Multiple Projectiles</title>
 <style>
-  html, body {
-    margin: 0;
-    padding: 0;
-    background: #000;
-    overflow: hidden;
-    touch-action: none;
-    font-family: sans-serif;
-    color: #fff;
-  }
-  canvas { display: block; }
-  .controls {
-    position: absolute;
-    top: 10px;
-    left: 10px;
-    background: rgba(0,0,0,0.6);
-    padding: 10px;
-    border-radius: 8px;
-  }
-  .controls label { display: block; margin: 5px 0; }
-  .controls input { width: 150px; }
+html, body {
+  margin: 0; padding: 0;
+  background: #000; overflow: hidden;
+  touch-action: none;
+  font-family: sans-serif;
+  color: #fff;
+}
+canvas { display: block; }
+.controls {
+  position: absolute;
+  top: 10px;
+  left: 10px;
+  background: rgba(0,0,0,0.6);
+  padding: 10px;
+  border-radius: 8px;
+}
+.controls label { display: block; margin: 5px 0; }
+.controls input { width: 150px; }
 </style>
 </head>
 <body>
@@ -49,71 +47,50 @@
 const canvas = document.getElementById("c");
 const ctx = canvas.getContext("2d");
 
-function resize() {
-  canvas.width = window.innerWidth;
-  canvas.height = window.innerHeight;
-}
+function resize() { canvas.width = window.innerWidth; canvas.height = window.innerHeight; }
 resize();
 window.addEventListener("resize", resize);
 
-// ---------- Physics ----------
-let G = 1200;               // gravitational constant
+const G = 1200;
 let centralMass = 5000;
 let centralRadius = 30;
-let projectileMass = 1;     // currently only for display/future extensions
+let projectileMass = 1;
 let projectileRadius = 6;
 const dt = 1/60;
 
-// Central body
 const planet = {
-  x: () => canvas.width / 2,
-  y: () => canvas.height / 2,
+  x: () => canvas.width/2,
+  y: () => canvas.height/2,
   r: centralRadius
 };
 
-// Projectile
-let ball = resetBall();
+let projectiles = [];
 let previewPath = [];
 let touchStart = null;
 
-function resetBall() {
-  return {
-    x: canvas.width / 2 + 150,
-    y: canvas.height / 2,
-    vx: 0,
-    vy: 0,
-    r: projectileRadius,
-    active: false
-  };
-}
-
 // ---------- Input controls ----------
-const cmassSlider = document.getElementById("cmass");
-const cradSlider = document.getElementById("crad");
-const pmassSlider = document.getElementById("pmass");
-const pradSlider = document.getElementById("prad");
-
-cmassSlider.addEventListener("input", ()=>{ centralMass = +cmassSlider.value; document.getElementById("cmassVal").innerText = centralMass; });
-cradSlider.addEventListener("input", ()=>{ centralRadius = +cradSlider.value; document.getElementById("cradVal").innerText = centralRadius; planet.r = centralRadius; });
-pmassSlider.addEventListener("input", ()=>{ projectileMass = +pmassSlider.value; document.getElementById("pmassVal").innerText = projectileMass; });
-pradSlider.addEventListener("input", ()=>{ projectileRadius = +pradSlider.value; document.getElementById("pradVal").innerText = projectileRadius; ball.r = projectileRadius; });
+document.getElementById("cmass").addEventListener("input", e => {
+  centralMass = +e.target.value;
+  document.getElementById("cmassVal").innerText = centralMass;
+});
+document.getElementById("crad").addEventListener("input", e => {
+  centralRadius = +e.target.value;
+  planet.r = centralRadius;
+  document.getElementById("cradVal").innerText = centralRadius;
+});
+document.getElementById("pmass").addEventListener("input", e => {
+  projectileMass = +e.target.value;
+  document.getElementById("pmassVal").innerText = projectileMass;
+});
+document.getElementById("prad").addEventListener("input", e => {
+  projectileRadius = +e.target.value;
+  document.getElementById("pradVal").innerText = projectileRadius;
+});
 
 // ---------- Touch controls ----------
 canvas.addEventListener("touchstart", e => {
   const t = e.touches[0];
   touchStart = { x: t.clientX, y: t.clientY };
-
-  ball = {
-    ...ball,
-    x: t.clientX,
-    y: t.clientY,
-    vx: 0,
-    vy: 0,
-    active: false,
-    r: projectileRadius
-  };
-
-  previewPath = [];
 });
 
 canvas.addEventListener("touchmove", e => {
@@ -121,15 +98,25 @@ canvas.addEventListener("touchmove", e => {
   const t = e.touches[0];
   const vx = (touchStart.x - t.clientX) * 0.05;
   const vy = (touchStart.y - t.clientY) * 0.05;
-  computePreview(ball.x, ball.y, vx, vy);
+  computePreview(t.clientX, t.clientY, vx, vy);
 });
 
 canvas.addEventListener("touchend", e => {
   if (!touchStart) return;
   const t = e.changedTouches[0];
-  ball.vx = (touchStart.x - t.clientX) * 0.05;
-  ball.vy = (touchStart.y - t.clientY) * 0.05;
-  ball.active = true;
+  const vx = (touchStart.x - t.clientX) * 0.05;
+  const vy = (touchStart.y - t.clientY) * 0.05;
+
+  projectiles.push({
+    x: t.clientX,
+    y: t.clientY,
+    vx: vx,
+    vy: vy,
+    r: projectileRadius,
+    active: true,
+    mass: projectileMass
+  });
+
   touchStart = null;
   previewPath = [];
 });
@@ -137,67 +124,60 @@ canvas.addEventListener("touchend", e => {
 // ---------- Trajectory preview ----------
 function computePreview(x, y, vx, vy) {
   previewPath = [];
-
-  let px = x;
-  let py = y;
-  let pvx = vx;
-  let pvy = vy;
+  let px = x, py = y, pvx = vx, pvy = vy;
   const steps = 200;
-  const stepDt = dt;
 
-  for (let i = 0; i < steps; i++) {
+  for (let i=0; i<steps; i++){
     const dx = planet.x() - px;
     const dy = planet.y() - py;
     const distSq = dx*dx + dy*dy;
     const dist = Math.sqrt(distSq);
+    if(dist < planet.r + projectileRadius) break;
 
-    if (dist < planet.r + ball.r) break;
+    const accel = (G*centralMass)/distSq;
+    const ax = accel*dx/dist;
+    const ay = accel*dy/dist;
 
-    const accel = (G * centralMass) / distSq;
-    const ax = accel * dx / dist;
-    const ay = accel * dy / dist;
-
-    pvx += ax * stepDt;
-    pvy += ay * stepDt;
-    px += pvx;
-    py += pvy;
-
-    previewPath.push({ x:px, y:py });
+    pvx += ax*dt; pvy += ay*dt;
+    px += pvx; py += pvy;
+    previewPath.push({x:px,y:py});
   }
 }
 
 // ---------- Update ----------
-function update() {
-  if (!ball.active) return;
+function update(){
+  for(let ball of projectiles){
+    if(!ball.active) continue;
 
-  const dx = planet.x() - ball.x;
-  const dy = planet.y() - ball.y;
-  const distSq = dx*dx + dy*dy;
-  const dist = Math.sqrt(distSq);
+    const dx = planet.x() - ball.x;
+    const dy = planet.y() - ball.y;
+    const distSq = dx*dx + dy*dy;
+    const dist = Math.sqrt(distSq);
 
-  if (dist < planet.r + ball.r) {
-    ball = resetBall();
-    return;
+    if(dist < planet.r + ball.r){
+      ball.active = false; // keep other balls alive
+      continue;
+    }
+
+    const accel = (G*centralMass)/distSq;
+    const ax = accel*dx/dist;
+    const ay = accel*dy/dist;
+
+    ball.vx += ax*dt;
+    ball.vy += ay*dt;
+    ball.x += ball.vx;
+    ball.y += ball.vy;
   }
-
-  const accel = (G * centralMass) / distSq;
-  const ax = accel * dx / dist;
-  const ay = accel * dy / dist;
-
-  ball.vx += ax * dt;
-  ball.vy += ay * dt;
-  ball.x += ball.vx;
-  ball.y += ball.vy;
 }
 
 // ---------- Draw ----------
-function draw() {
+function draw(){
   ctx.clearRect(0,0,canvas.width,canvas.height);
 
   // Planet
   ctx.fillStyle = "#4fa3ff";
   ctx.beginPath();
-  ctx.arc(planet.x(), planet.y(), planet.r, 0, Math.PI*2);
+  ctx.arc(planet.x(),planet.y(),planet.r,0,Math.PI*2);
   ctx.fill();
 
   // Trajectory preview
@@ -209,18 +189,21 @@ function draw() {
     ctx.stroke();
   }
 
-  // Ball
-  ctx.fillStyle = "#fff";
-  ctx.beginPath();
-  ctx.arc(ball.x, ball.y, ball.r, 0, Math.PI*2);
-  ctx.fill();
+  // Draw all projectiles
+  for(let ball of projectiles){
+    if(!ball.active) continue;
+    ctx.fillStyle = "#fff";
+    ctx.beginPath();
+    ctx.arc(ball.x,ball.y,ball.r,0,Math.PI*2);
+    ctx.fill();
+  }
 
   // Aim line
   if(touchStart){
     ctx.strokeStyle = "#888";
     ctx.beginPath();
     ctx.moveTo(touchStart.x,touchStart.y);
-    ctx.lineTo(ball.x,ball.y);
+    ctx.lineTo(touchStart.x,touchStart.y); // line from start to current finger handled in preview
     ctx.stroke();
   }
 }
