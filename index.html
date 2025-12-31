@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-<title>Gravity Sandbox - Elastic Collisions</title>
+<title>Gravity Sandbox - Piles & Friction</title>
 <style>
 html, body {
   margin: 0; padding: 0;
@@ -83,7 +83,8 @@ const planet = {
 let projectiles = [];
 let previewPath = [];
 let touchStart = null;
-const damping = 0.98; // slight energy loss to settle pile
+const damping = 0.95; // energy loss on collisions
+const friction = 0.85; // tangential friction on planet surface
 
 // ---------- Input controls ----------
 document.getElementById("cmass").addEventListener("input", e => {
@@ -171,20 +172,17 @@ function resolveElasticCollision(a,b){
   const dx = b.x - a.x;
   const dy = b.y - a.y;
   const dist = Math.sqrt(dx*dx + dy*dy);
-  if(dist===0) return; // avoid division by zero
+  if(dist===0) return;
 
-  // Normal vector
   const nx = dx/dist;
   const ny = dy/dist;
 
-  // Relative velocity
   const vxRel = a.vx - b.vx;
   const vyRel = a.vy - b.vy;
 
   const vRelAlongN = vxRel*nx + vyRel*ny;
-  if(vRelAlongN > 0) return; // moving away
+  if(vRelAlongN > 0) return;
 
-  // Elastic impulse
   const m1 = a.mass, m2 = b.mass;
   const impulse = (2*vRelAlongN)/(m1+m2);
 
@@ -193,7 +191,7 @@ function resolveElasticCollision(a,b){
   b.vx += impulse * m1 * nx;
   b.vy += impulse * m1 * ny;
 
-  // Slightly separate to prevent sticking
+  // Separate slightly
   const overlap = a.r + b.r - dist;
   a.x -= nx * overlap/2;
   a.y -= ny * overlap/2;
@@ -213,17 +211,20 @@ function update(){
     const dy = planet.y() - ball.y;
     const dist = Math.sqrt(dx*dx + dy*dy);
 
-    // Central mass collision
+    // Central mass collision with friction
     if(collisionOn && dist < planet.r + ball.r){
-      // Reflect velocity elastically
       const nx = dx/dist, ny = dy/dist;
       const vDotN = ball.vx*nx + ball.vy*ny;
+      const vTangentX = ball.vx - vDotN*nx;
+      const vTangentY = ball.vy - vDotN*ny;
+
+      // Reflect normal component elastically
       ball.vx -= 2*vDotN*nx;
       ball.vy -= 2*vDotN*ny;
 
-      // Apply damping so pile settles
-      ball.vx *= damping;
-      ball.vy *= damping;
+      // Apply damping to normal and friction to tangent
+      ball.vx = ball.vx*damping - vTangentX*(1-friction);
+      ball.vy = ball.vy*damping - vTangentY*(1-friction);
 
       // Push out to surface
       ball.x = planet.x() - nx*(planet.r + ball.r);
